@@ -1,0 +1,76 @@
+# ==============================================================================
+# Global Configuration & Engine Optimization
+# ==============================================================================
+AllCops:
+  TargetRubyVersion: 3.4
+  DisplayCopNames: true
+  DisplayStyleGuide: true
+  ExtraDetails: true
+  NewCops: enable               # Automatically adopts updates from RuboCop 1.x
+  Exclude:
+    - 'spec/**/*'
+    - 'vendor/**/*'
+    - 'bin/**/*'
+    - 'db/**/*'                 # Exclude migrations if using a database
+    - 'config/environments/**/*'
+
+# ==============================================================================
+# Performance & Modernization Cops (Highly Recommended)
+# ==============================================================================
+
+# Reduces memory bloat by freezing strings across your codebase
+Style/FrozenStringLiteralComment:
+  Enabled: true
+  EnforcedStyle: always
+
+# Enforces fast native safe-navigation operators (user&.name)
+Style/SafeNavigation:
+  Enabled: true
+
+# Enforces modern hash syntax ({ key: value }) instead of rockets
+Style/HashSyntax:
+  EnforcedStyle: ruby19
+
+# Enforces arrays of symbols/strings formatting (%i[...] and %w[...])
+Style/SymbolArray:
+  EnforcedStyle: percent
+Style/WordArray:
+  EnforcedStyle: percent
+
+# ==============================================================================
+# Maintainability & Complexity Metrics (Balanced Caps)
+# ==============================================================================
+
+# Keeps methods focused (Standard RuboCop default of 10 is often too strict)
+Metrics/MethodLength:
+  Max: 15
+  CountComments: false
+
+# Prevents massive, unmaintainable code files
+Metrics/ClassLength:
+  Max: 150
+
+# Limits cognitive nesting depth (if inside an if inside a loop)
+Metrics/BlockNesting:
+  Max: 3
+
+# Prevents horizontal scrolling issues on smaller screens
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns: ['\A\s*#', 'url:'] # Ignores long comments and URLs
+
+# ==============================================================================
+# Noise Reduction (Disabling Overly Strict Stylistic Rules)
+# ==============================================================================
+
+# Disabled: Forcing documentation on every single tiny class is annoying
+Style/Documentation:
+  Enabled: false
+
+# Disabled: Enforcing mandatory single or double quotes wastes time
+Style/StringLiterals:
+  Enabled: false
+
+# Disabled: Let developers choose between 'fail' and 'raise' based on context
+Style/SignalException:
+  Enabled: false

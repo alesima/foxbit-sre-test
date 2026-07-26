@@ -151,6 +151,29 @@ Este projeto adota uma postura de **Shift-Left Security** integrada ao GitHub Ac
 
 ---
 
+## ⚙️ Configuração do GitHub Actions
+
+Para executar os pipelines de [CI](.github/workflows/ci.yml) e [CD](.github/workflows/cd.yml), configure as variáveis em **Settings → Secrets and variables → Actions** do repositório:
+
+### Variáveis (Variables)
+
+| Nome | Descrição | Padrão | Obrigatório |
+|---|---|---|---|
+| `AWS_REGION` | Região AWS para ECR e EKS | `us-east-1` | Apenas CD |
+| `ECR_REPOSITORY` | Nome do repositório ECR | `calc-api` | Apenas CD |
+| `EKS_CLUSTER_NAME` | Nome do cluster EKS | — | CD |
+| `NAMESPACE` | Namespace K8s para deploy | `calc-api-system` | Não |
+
+### Segredos (Secrets)
+
+| Nome | Descrição | Obrigatório |
+|---|---|---|
+| `ROLE_TO_ASSUME` | ARN da IAM Role para OIDC (ex: `arn:aws:iam::123456789012:role/GitHubActionsEKSDeployer`) | CD (opcional no CI) |
+
+> **Nota:** O CI possui valores padrão para `AWS_REGION` e `ECR_REPOSITORY`. O CD exige que todas as variáveis estejam configuradas (exceto `NAMESPACE`, que tem fallback).
+
+---
+
 ## 🧹 Limpeza
 
 Para remover todos os recursos implantados do seu cluster:

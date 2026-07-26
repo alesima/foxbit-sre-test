@@ -112,9 +112,13 @@ jobs:
         if: failure()
         run: |
           echo "❌ Deploy falhou. Iniciando rollback..."
-          kubectl rollout undo deployment/calc-api
-          kubectl rollout status deployment/calc-api --timeout=60s
-          echo "✅ Rollback concluído — deployment anterior restaurado"
+          if kubectl rollout history deployment/calc-api &>/dev/null; then
+            kubectl rollout undo deployment/calc-api
+            kubectl rollout status deployment/calc-api --timeout=60s
+            echo "✅ Rollback concluído — deployment anterior restaurado"
+          else
+            echo "⚠️ Primeiro deploy — sem histórico de rollback"
+          fi
 
       - name: Notify
         if: success()

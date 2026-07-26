@@ -78,10 +78,17 @@ jobs:
             --namespace dast-test --create-namespace \
             --set image.repository=calc-api \
             --set image.tag=test --wait
+      - name: Port-forward service for ZAP
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=calc-api \
+            -n dast-test --timeout=60s
+          kubectl port-forward -n dast-test svc/calc-api-service 8000:80 &
+          sleep 3
+
       - name: OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'http://calc-api-service.dast-test.svc.cluster.local/healthz/ready'
+          target: 'http://localhost:8000/healthz/ready'
           fail_action: false
 
   # ── SRE: Build imutável — só roda em push pra main ──

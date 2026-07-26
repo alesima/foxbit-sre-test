@@ -80,7 +80,7 @@ jobs:
             --set image.tag=test --wait
       - name: Port-forward service for ZAP
         run: |
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=calc-api \
+          kubectl wait --for=condition=ready pod -l app=calc-api \
             -n dast-test --timeout=60s
           kubectl port-forward -n dast-test svc/calc-api-service 8000:80 &
           sleep 3

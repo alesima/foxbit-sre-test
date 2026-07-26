@@ -98,6 +98,9 @@ jobs:
       - name: Apply manifest
         run: |
           kubectl apply -f /tmp/deploy/manifest.yaml
+          kubectl annotate deployment/calc-api \
+            kubernetes.io/change-cause="Deploy ${{ env.ECR_REPOSITORY }}:${{ github.sha }}" \
+            --overwrite=true
           kubectl rollout status deployment/calc-api --timeout=120s
 
       - name: Smoke test

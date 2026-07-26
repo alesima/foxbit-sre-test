@@ -25,6 +25,7 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  NAMESPACE: ${{ vars.NAMESPACE || 'calc-api-system' }}
   ROLE_TO_ASSUME: ${{ secrets.ROLE_TO_ASSUME }}
 
 jobs:
@@ -98,14 +99,14 @@ jobs:
       - name: Apply manifest
         run: |
           kubectl apply -f /tmp/deploy/manifest.yaml
-          kubectl annotate deployment/calc-api \
+          kubectl annotate deployment/calc-api -n ${{ env.NAMESPACE }} \
             kubernetes.io/change-cause="Deploy ${{ env.ECR_REPOSITORY }}:${{ github.sha }}" \
             --overwrite=true
-          kubectl rollout status deployment/calc-api --timeout=120s
+          kubectl rollout status deployment/calc-api -n ${{ env.NAMESPACE }} --timeout=120s
 
       - name: Smoke test
         run: |
-          kubectl run smoke-test \
+          kubectl run smoke-test -n ${{ env.NAMESPACE }} \
             --image=curlimages/curl:latest \
             --restart=Never --rm -i --timeout=15s -- \
             curl -sf "http://calc-api-service/api/sum?term_one=2&term_two=2"
@@ -115,9 +116,9 @@ jobs:
         if: failure()
         run: |
           echo "❌ Deploy falhou. Iniciando rollback..."
-          if kubectl rollout history deployment/calc-api &>/dev/null; then
-            kubectl rollout undo deployment/calc-api
-            kubectl rollout status deployment/calc-api --timeout=60s
+          if kubectl rollout history deployment/calc-api -n ${{ env.NAMESPACE }} &>/dev/null; then
+            kubectl rollout undo deployment/calc-api -n ${{ env.NAMESPACE }}
+            kubectl rollout status deployment/calc-api -n ${{ env.NAMESPACE }} --timeout=60s
             echo "✅ Rollback concluído — deployment anterior restaurado"
           else
             echo "⚠️ Primeiro deploy — sem histórico de rollback"

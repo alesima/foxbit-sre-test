@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: calc-api-prometheus-rules
+  labels:
+    app: calc-api
+data:
+  calc-api-rules.yml: |
+    groups:
+      - name: calc-api
+        interval: 30s
+        rules:
+          - alert: CalcApiDown
+            expr: up{job="calc-api"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "CalcApi is down"
+              description: "Instance {{ $labels.instance }} has been unreachable for more than 1 minute."
+
+          - alert: CalcApiHighErrorRate
+            expr: |
+              rate(http_requests_total{status=~"5.."}[5m])
+              /
+              rate(http_requests_total[5m])
+              > 0.05
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "CalcApi high error rate"
+              description: "Error rate is {{ $value | humanizePercentage }} in the last 5 minutes."
+
+          - alert: CalcApiHighLatency
+            expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "CalcApi high latency"
+              description: "P95 latency is {{ $value }}s in the last 5 minutes."
+
+          - alert: CalcApiRateLimited
+            expr: rate(http_requests_total{status="429"}[5m]) > 0
+            for: 1m
+            labels:
+              severity: info
+            annotations:
+              summary: "CalcApi rate limiting active"
+              description: "Requests are being rate-limited at {{ $value }} req/s."
+
+          - alert: CalcApiFewReplicas
+            expr: |
+              sum(kube_deployment_status_replicas_available{deployment="calc-api"})
+              < 2
+            for: 30s
+            labels:
+              severity: warning
+            annotations:
+              summary: "CalcApi running with few replicas"
+              description: "Available replicas: {{ $value }} (expected at least 2)"

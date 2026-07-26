@@ -107,11 +107,13 @@ jobs:
           kubectl apply -n ${{ env.NAMESPACE }} -f /tmp/deploy/manifest.yaml
           kubectl annotate deployment/calc-api -n ${{ env.NAMESPACE }} \
             kubernetes.io/change-cause="Deploy ${{ env.ECR_REPOSITORY }}:${{ github.sha }}" \
-            --overwrite=true
+            --overwrite=true || true
           kubectl rollout status deployment/calc-api -n ${{ env.NAMESPACE }} --timeout=120s
 
       - name: Smoke test
         run: |
+          kubectl wait --for=condition=ready pod -l app=calc-api \
+            -n ${{ env.NAMESPACE }} --timeout=60s
           kubectl run smoke-test -n ${{ env.NAMESPACE }} \
             --image=curlimages/curl:latest \
             --restart=Never --rm -i --timeout=15s -- \

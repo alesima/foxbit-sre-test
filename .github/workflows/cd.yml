@@ -96,6 +96,11 @@ jobs:
           echo "Resources:"
           grep -E '^kind:' /tmp/deploy/manifest.yaml | sort | uniq -c
 
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml \
+            | kubectl apply -f -
+
       - name: Apply manifest
         run: |
           kubectl apply -f /tmp/deploy/manifest.yaml

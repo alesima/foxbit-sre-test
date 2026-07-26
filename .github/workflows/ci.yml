@@ -1,0 +1,182 @@
+name: CI - Quality & Security Gate
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'calc-api' }}
+  ROLE_TO_ASSUME: ${{ secrets.ROLE_TO_ASSUME || '' }}
+
+jobs:
+  unit-tests:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby 3.4
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4
+          bundler-cache: true
+      - name: Run tests
+        run: bundle exec rspec
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  sast-security:
+    name: Static Security Analysis (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby 3.4
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4
+          bundler-cache: true
+      - name: Bundler Audit (CVEs)
+        run: |
+          gem install bundler-audit
+          bundle-audit check --update
+      - name: Brakeman (Ruby SAST)
+        run: |
+          gem install brakeman
+          brakeman -q -w3
+      - name: Hadolint (Dockerfile lint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  dast-security:
+    name: Dynamic Application Security Testing (DAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create KinD Cluster
+        uses: helm/kind-action@v1.8.0
+        with:
+          cluster_name: kind-dast
+      - name: Build Local Image
+        run: docker build -t calc-api:test .
+      - name: Load Image to KinD
+        run: kind load docker-image calc-api:test --name kind-dast
+      - name: Deploy via Helm
+        run: |
+          helm upgrade --install calc-api ./charts/calc-api \
+            --namespace dast-test --create-namespace \
+            --set image.repository=calc-api \
+            --set image.tag=test --wait
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://calc-api-service.dast-test.svc.cluster.local/healthz/ready'
+          fail_action: false
+
+  # ── SRE: Build imutável — só roda em push pra main ──
+  build-and-push-ecr:
+    name: Build, Scan & Push to ECR
+    needs: [unit-tests, sast-security, dast-security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.build.outputs.image_tag }}
+      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: docker build -t ${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+
+      - name: Container Scan (Trivy)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      - name: Generate SBOM (SPDX)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          format: spdx-json
+          output: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 90
+
+      - name: Push to ECR
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker tag ${ECR_REPOSITORY}:${IMAGE_TAG} ${FULL_IMAGE}
+          docker tag ${FULL_IMAGE} ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+          docker push ${FULL_IMAGE}
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+  # ── Gera manifest final com a tag exata do ECR ──
+  generate-manifests:
+    name: Generate Deploy Manifests
+    needs: build-and-push-ecr
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Render kustomize manifest with tagged image
+        env:
+          ECR_REGISTRY: ${{ needs.build-and-push-ecr.outputs.ecr_registry }}
+          IMAGE_TAG: ${{ needs.build-and-push-ecr.outputs.image_tag }}
+        run: |
+          cp -r k8s /tmp/k8s-render
+          cd /tmp/k8s-render
+          kustomize edit set image calc-api=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          kustomize build . > /tmp/manifest.yaml
+          echo "Manifest gerado:"
+          sha256sum /tmp/manifest.yaml
+
+      - name: Upload manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-manifest
+          path: /tmp/manifest.yaml
+          retention-days: 90

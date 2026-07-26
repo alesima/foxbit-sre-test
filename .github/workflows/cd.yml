@@ -1,0 +1,125 @@
+name: CD - Deploy to AWS EKS
+
+on:
+  workflow_run:
+    workflows: ["CI - Quality & Security Gate"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'CI run ID to deploy from (leave empty for latest successful)'
+        required: false
+        default: ''
+
+concurrency:
+  group: deploy-eks
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  ROLE_TO_ASSUME: ${{ secrets.ROLE_TO_ASSUME }}
+
+jobs:
+  deploy:
+    name: Progressive Deploy to EKS
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Resolve CI run ID
+        id: resolve
+        env:
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          DISPATCH_RUN_ID: ${{ github.event.inputs.run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$TRIGGER_RUN_ID" ]; then
+            echo "run_id=$TRIGGER_RUN_ID" >> $GITHUB_OUTPUT
+            echo "Using CI run: $TRIGGER_RUN_ID (triggered by workflow_run)"
+          elif [ -n "$DISPATCH_RUN_ID" ]; then
+            echo "run_id=$DISPATCH_RUN_ID" >> $GITHUB_OUTPUT
+            echo "Using CI run: $DISPATCH_RUN_ID (provided via workflow_dispatch)"
+          else
+            LATEST=$(gh run list \
+              --workflow "CI - Quality & Security Gate" \
+              --branch main \
+              --status success \
+              --json databaseId \
+              --jq '.[0].databaseId' \
+              --limit 1)
+            if [ -z "$LATEST" ]; then
+              echo "No successful CI run found on main. Run CI first."
+              exit 1
+            fi
+            echo "run_id=$LATEST" >> $GITHUB_OUTPUT
+            echo "Using CI run: $LATEST (latest successful)"
+          fi
+
+      - name: Download manifest from CI
+        uses: actions/download-artifact@v4
+        with:
+          name: k8s-manifest
+          path: /tmp/deploy
+          run-id: ${{ steps.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify manifest
+        run: |
+          if [ ! -f /tmp/deploy/manifest.yaml ]; then
+            echo "❌ Manifest artifact not found in CI run ${{ steps.resolve.outputs.run_id }}"
+            echo "Ensure CI completed successfully on main and generated k8s-manifest artifact"
+            exit 1
+          fi
+          echo "SHA256: $(sha256sum /tmp/deploy/manifest.yaml)"
+          echo "Resources:"
+          grep -E '^kind:' /tmp/deploy/manifest.yaml | sort | uniq -c
+
+      - name: Apply manifest
+        run: |
+          kubectl apply -f /tmp/deploy/manifest.yaml
+          kubectl rollout status deployment/calc-api --timeout=120s
+
+      - name: Smoke test
+        run: |
+          kubectl run smoke-test \
+            --image=curlimages/curl:latest \
+            --restart=Never --rm -i --timeout=15s -- \
+            curl -sf "http://calc-api-service:8000/api/sum?term_one=2&term_two=2"
+          echo "✅ Smoke test passed"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deploy falhou. Iniciando rollback..."
+          kubectl rollout undo deployment/calc-api
+          kubectl rollout status deployment/calc-api --timeout=60s
+          echo "✅ Rollback concluído — deployment anterior restaurado"
+
+      - name: Notify
+        if: success()
+        run: |
+          echo "✅ Deploy concluído"
+          echo "  Imagem : ${{ env.ECR_REPOSITORY }}@${{ github.sha }}"
+          echo "  Cluster: ${{ env.EKS_CLUSTER_NAME }}"
+          echo "  CI Run : ${{ steps.resolve.outputs.run_id }}"

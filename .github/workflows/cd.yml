@@ -97,13 +97,14 @@ jobs:
           grep -E '^kind:' /tmp/deploy/manifest.yaml | sort | uniq -c
 
       - name: Create namespace if not exists
+        if: env.NAMESPACE != 'default'
         run: |
           kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml \
             | kubectl apply -f -
 
       - name: Apply manifest
         run: |
-          kubectl apply -f /tmp/deploy/manifest.yaml
+          kubectl apply -n ${{ env.NAMESPACE }} -f /tmp/deploy/manifest.yaml
           kubectl annotate deployment/calc-api -n ${{ env.NAMESPACE }} \
             kubernetes.io/change-cause="Deploy ${{ env.ECR_REPOSITORY }}:${{ github.sha }}" \
             --overwrite=true

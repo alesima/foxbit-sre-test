@@ -21,13 +21,26 @@ class CalcApi < Sinatra::Base
     labels: %i[endpoint status]
   )
 
+  HTTP_REQUEST_DURATION = Prometheus::Client::Histogram.new(
+    :http_request_duration_seconds,
+    docstring: 'HTTP request duration in seconds',
+    labels: %i[endpoint]
+  )
+
   prometheus.register(HTTP_REQUESTS) unless prometheus.exist?(:http_requests_total)
+  prometheus.register(HTTP_REQUEST_DURATION) unless prometheus.exist?(:http_request_duration_seconds)
 
   before do
     content_type :json
+    request.env['start_time'] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   end
 
   after do
+    if request.path_info.start_with?('/api')
+      duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - request.env['start_time']
+      HTTP_REQUEST_DURATION.observe(duration, labels: { endpoint: request.path_info })
+    end
+
     if response.status < 400 && request.path_info.start_with?('/api')
       HTTP_REQUESTS.increment(labels: { endpoint: request.path_info, status: response.status })
     end

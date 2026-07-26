@@ -53,7 +53,7 @@ jobs:
       - name: Brakeman (Ruby SAST)
         run: |
           gem install brakeman
-          brakeman -q -w3
+          brakeman -q -w3 --force
       - name: Hadolint (Dockerfile lint)
         uses: hadolint/hadolint-action@v3.1.0
         with:

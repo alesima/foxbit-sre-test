@@ -1,0 +1,45 @@
+replicaCount: 2
+
+image:
+  repository: calc-api
+  pullPolicy: IfNotPresent
+  tag: "v1.0.0"
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+networkPolicy:
+  enabled: true
+  allowClusterTraffic: false
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels:
+    release: prometheus
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001

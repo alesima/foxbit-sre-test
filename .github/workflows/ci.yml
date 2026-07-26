@@ -82,7 +82,7 @@ jobs:
         run: |
           kubectl wait --for=condition=ready pod -l app=calc-api \
             -n dast-test --timeout=60s
-          kubectl port-forward -n dast-test svc/calc-api-service 8000:80 &
+          kubectl port-forward -n dast-test svc/calc-api-service 8000:8000 &
           PF_PID=$!
           sleep 3
           touch report_json.json report_md.md report_html.html

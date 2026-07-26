@@ -1,0 +1,28 @@
+# Git e CI/CD
+.git
+.gitignore
+.github
+
+# Arquivos de Teste e Qualidade (Não devem ir para a imagem de produção)
+spec
+coverage
+.rspec
+.rubocop.yml
+
+# Manifestos e Infraestrutura (Não pertencem ao container da aplicação)
+k8s
+charts
+Makefile
+README.md
+
+# Dependências locais, logs e arquivos temporários
+.bundle
+vendor/bundle
+log/*
+tmp/*
+.env*
+.DS_Store
+
+# IDEs
+.vscode
+.idea

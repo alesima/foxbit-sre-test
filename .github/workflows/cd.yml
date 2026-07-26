@@ -105,7 +105,7 @@ jobs:
           kubectl run smoke-test \
             --image=curlimages/curl:latest \
             --restart=Never --rm -i --timeout=15s -- \
-            curl -sf "http://calc-api-service:8000/api/sum?term_one=2&term_two=2"
+            curl -sf "http://calc-api-service/api/sum?term_one=2&term_two=2"
           echo "✅ Smoke test passed"
 
       - name: Rollback on failure

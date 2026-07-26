@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Instala pacotes essenciais apenas para compilar gems no Stage 1
 RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends build-essential && \
+    apt-get install -y --no-install-recommends build-essential=12.12 && \
     rm -rf /var/lib/apt/lists/*
 
 COPY Gemfile Gemfile.lock ./

@@ -5,7 +5,7 @@ source 'https://rubygems.org'
 ruby '3.4.10'
 
 gem 'prometheus-client', '~> 4.2'
-gem 'puma', '~> 6.5'
+gem 'puma', '~> 7.2'
 gem 'rack-attack', '~> 6.8'
 gem 'sinatra', '~> 4.1'
 
